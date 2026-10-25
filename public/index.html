@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101511" />
+    <title>GRBL Jog</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="mark">G</span>
+          <div><strong>GRBL JOG</strong><small>Machine control</small></div>
+        </div>
+        <div class="connection"><span id="led" class="led"></span><span id="connection-label">Disconnected</span></div>
+      </header>
+      <section class="connect panel">
+        <div>
+          <span class="eyebrow">SERIAL LINK</span>
+          <h1>Connect to your machine</h1>
+          <p>Use Chrome or Edge over HTTPS, or localhost. Select the USB serial device.</p>
+        </div>
+        <button id="connect" class="primary">Connect USB</button>
+      </section>
+      <section class="relay panel">
+        <div>
+          <span class="eyebrow">REMOTE SERIAL RELAY</span>
+          <h2>Connect through your server</h2>
+          <p>Paste the same session ID used by the serial bridge. Start the bridge first so it joins this room.</p>
+        </div>
+        <div class="relay-controls">
+          <input id="session-id" aria-label="Relay session ID" spellcheck="false" /><button
+            id="new-session"
+            class="secondary"
+          >
+            New ID</button
+          ><button id="connect-relay" class="primary">Connect relay</button>
+        </div>
+        <code class="relay-command" id="bridge-command"></code>
+      </section>
+      <section class="status panel">
+        <div class="status-head">
+          <div>
+            <span class="eyebrow">MACHINE STATUS</span>
+            <h2 id="machine-state">Not connected</h2>
+          </div>
+          <button id="poll" class="icon-button" aria-label="Query machine status" title="Query status">↻</button>
+        </div>
+        <div class="readouts">
+          <div><span>WORK X</span><strong id="pos-x">—</strong></div>
+          <div><span>WORK Y</span><strong id="pos-y">—</strong></div>
+          <div><span>WORK Z</span><strong id="pos-z">—</strong></div>
+        </div>
+        <div class="status-foot">
+          <span>Machine: <b id="machine-pos">MPos —</b></span
+          ><span>Switches: <b id="pins">—</b></span>
+        </div>
+      </section>
+      <section class="controls panel">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">MANUAL CONTROL</span>
+            <h2>Jog machine</h2>
+          </div>
+          <span class="safety">Hold to jog</span>
+        </div>
+        <div class="settings">
+          <label
+            >Step distance<select id="step">
+              <option value="0.1">0.1 mm</option>
+              <option value="1" selected>1 mm</option>
+              <option value="10">10 mm</option>
+              <option value="100">100 mm</option>
+            </select></label
+          ><label
+            >Feed rate<input id="feed" type="number" min="1" max="20000" value="1000" inputmode="numeric" /><span
+              class="suffix"
+              >mm/min</span
+            ></label
+          >
+        </div>
+        <div class="jog-layout">
+          <div class="pad" aria-label="XY jog controls">
+            <button class="jog" data-axis="Y" data-dir="1" aria-label="Jog Y positive">▲<small>Y+</small></button>
+            <button class="jog" data-axis="X" data-dir="-1" aria-label="Jog X negative">◀<small>X−</small></button>
+            <button class="jog center" disabled>XY</button>
+            <button class="jog" data-axis="X" data-dir="1" aria-label="Jog X positive">▶<small>X+</small></button>
+            <button class="jog" data-axis="Y" data-dir="-1" aria-label="Jog Y negative">▼<small>Y−</small></button>
+          </div>
+          <div class="z-controls">
+            <button class="jog z" data-axis="Z" data-dir="1">Z+<small>UP</small></button
+            ><button class="jog z" data-axis="Z" data-dir="-1">Z−<small>DOWN</small></button>
+          </div>
+        </div>
+        <button id="unlock" class="secondary">Unlock alarm ($X)</button>
+        <p class="hint">
+          Jog buttons send incremental <code>$J=G91 G21</code> moves. Release the button to stop the jog.
+        </p>
+      </section>
+      <section class="console panel">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">COMMAND LINE</span>
+            <h2>Send GRBL command</h2>
+          </div>
+          <button id="clear-log" class="text-button">Clear</button>
+        </div>
+        <form id="command-form">
+          <input id="command" autocomplete="off" placeholder="e.g. $$ or G54" aria-label="GRBL command" /><button
+            class="primary"
+            type="submit"
+          >
+            Send
+          </button>
+        </form>
+        <div id="log" role="log" aria-live="polite"></div>
+      </section>
+      <footer>
+        Commands can move the machine. Keep clear of the work area and use the physical emergency stop if needed.
+      </footer>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
