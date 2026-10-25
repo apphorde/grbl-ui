@@ -1,4 +1,4 @@
-name: CI and container publish
+name: CI
 
 on:
   push:
@@ -24,32 +24,3 @@ jobs:
       - run: npm run test:e2e
       - run: npm exec eslint -- public/app.js server.mjs serial-bridge.mjs serial-bridge.test.mjs playwright.config.js e2e/serial-mock.spec.js
       - run: npm exec prettier -- --check --print-width 120 public/app.js public/index.html public/style.css server.mjs serial-bridge.mjs serial-bridge.test.mjs playwright.config.js e2e/serial-mock.spec.js package.json eslint.config.mjs
-      - run: docker build -t grbl-ui:ci .
-
-  publish:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: verify
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/metadata-action@v5
-        id: meta
-        with:
-          images: ghcr.io/apphorde/grbl-ui
-          tags: |
-            type=raw,value=latest
-            type=sha
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
