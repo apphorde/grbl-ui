@@ -1,37 +1,28 @@
 # GRBL Jog
 
-Mobile-friendly browser controller for GRBL-compatible USB serial machines. The browser talks directly to the USB serial device using the Web Serial API; the Node container only serves the static UI and does **not** proxy serial data.
+Mobile-friendly GRBL control UI with local Web Serial and authenticated remote bridge connectors. The server protects all UI and API routes with OIDC; remote controls are never available through an unauthenticated room ID.
 
-## Run
+## Configuration and run
 
-```sh
-npm start
-```
-
-Open `http://localhost:8080` in Chrome or Edge. Remote use requires HTTPS (Web Serial is a secure-context API). The host running the browser needs access to the USB serial device. Serving this UI from a server does not give that server's USB port to a remote browser: to control a board physically attached to a headless server, use a browser on that server or the optional standalone bridge below.
-
-## Standalone serial bridge
-
-The standalone process forwards raw serial bytes to and from the WebSocket relay. The UI creates a random session ID; copy that same ID to the machine host so the browser and bridge join the same relay room. Start the bridge first, then connect in the UI. For the deployed relay:
+Required environment variables: `OIDC_ISSUER` (issuer URL), `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `APP_URL` (public origin, for example `https://grbl.example.com`, with no trailing slash). Register the exact redirect URI `${APP_URL}/oidc/callback` with the provider. Set `RELAY_API_TOKEN` to a server-side admin token; `RELAY_API_URL` optionally overrides the default `https://ws.api.apphor.de`. Do not put relay credentials in browser configuration. Without OIDC configuration the UI fails closed; `/health` reports readiness only.
 
 ```sh
 npm install
-SERIAL_PORT=/dev/ttyUSB0 RELAY_URL=wss://ws.api.apphor.de/<session-id> npm run serial-bridge
+npm start
 ```
 
-Set `SERIAL_PORT` to the local serial device and `RELAY_URL` to the relay's `ws://` or `wss://` URL including the session ID. `BAUD_RATE` is optional and defaults to `115200`. WebSocket text frames are encoded as UTF-8 and binary frames remain bytes; serial data is sent in binary WebSocket frames. This bridges an unrestricted raw serial channel; the relay has no authentication, encryption beyond TLS, command filtering, or multi-client arbitration. Anyone who knows the session ID can join and send machine commands. Treat the session ID as a secret, use the TLS URL, and disconnect when done; this is not a safety boundary. Either side closing, serial errors, or excessive WebSocket buffering closes the bridge. Payloads and endpoint URLs are not logged.
+The server uses `openid-client` v6 authorization-code PKCE, state/nonce validation and library token validation. Sessions are opaque, in-memory, HttpOnly, Secure, SameSite=Lax cookies, expiring within eight hours. Logout clears the local session. Mutating endpoints require same-origin `Origin`.
 
-## Container
+## Relay contract
 
-```sh
-docker build -t grbl-jog-ui .
-docker run --rm -p 8080:8080 grbl-jog-ui
-```
+`GET /api/machines` lists only unclaimed machines and machines owned by the authenticated OIDC `sub`; records owned by other accounts and their UUIDs are omitted. `POST /api/machines/{uuid}/claim` makes an immutable one-time claim; `POST /api/machines/{uuid}/ticket` issues a one-time short-lived (at most 60 seconds) ticket. Both derive `ownerSub` from the session. The UI connects to `wss://ws.api.apphor.de/{uuid}` and sends `{ "type": "authorize", "ticket": "…" }` immediately after opening, then forwards raw binary GRBL data. The relay admin API uses `Authorization: Bearer RELAY_API_TOKEN` server-side: `GET /_admin/machines`, and POST `/_admin/machines/{uuid}/claim` or `/ticket` with `{ownerSub}`. The relay must enforce immutable claims and ticket ownership/expiry.
 
-## Use and safety
+## Local serial and safety
 
-Connect, select the serial device, then jog with press-and-hold controls. Default serial speed is 115200 baud. Status is polled using `?` every 500 ms; GRBL status reports can include state, WPos/MPos, and limit/probe pins (`Pn`). Jog steps use `$J=G91 G21 ... F...`; releasing the control sends real-time feed hold (`!`). Unlock sends `$X`. Commands are sent as entered with a newline. Confirm your controller's baud rate, configuration, axis directions, and physical emergency stop before operating. Jog stop is not a safety-rated emergency stop.
+The local USB button uses browser Web Serial (Chrome/Edge, HTTPS or localhost) and remains independent of remote relay control. Choose the USB device explicitly. Status is polled every 500 ms; jog release sends feed hold. Commands can move the machine: verify baud rate, configuration, axis directions, and physical emergency stop. Jog stop is not safety-rated.
 
-## Browser support
+## Bridge host
 
-Web Serial requires a supporting Chromium browser and a secure context (HTTPS or localhost). iOS Safari and Firefox do not currently provide this interface. A remote deployment must use HTTPS. Serial permissions are granted by the user per origin and are not transferred to the server container.
+The bridge connects to `RELAY_URL` (default `wss://ws.api.apphor.de`) at `/bridge/register` using `Authorization: Bearer BRIDGE_REGISTRATION_TOKEN`. Configure the exact hardware `SERIAL_PORT` and obtain `BRIDGE_REGISTRATION_TOKEN` from your secret store; never log or expose the token. `BAUD_RATE` defaults to 115200. The bridge stores a persistent UUID in `MACHINE_ID_PATH` (default `/var/lib/grbl-bridge/machine-id`). A successful authenticated registration is required before serial data is forwarded.
+
+The optional systemd template is `deploy/grbl-bridge.service`. Install and configure it only when the hardware is attached. Set `SERIAL_PORT` to the exact present device path (for example `/dev/ttyUSB0`); do not start the hardware service if that port is absent. The unit uses `dialout` and permits ttyUSB/ttyACM devices; change `SupplementaryGroups` to the device's owning group when needed. Create `/etc/grbl-bridge.env` readable only by root and set `SERIAL_PORT` and the secret-store-provided `BRIDGE_REGISTRATION_TOKEN` there. Do not use the former public room/session ID mode.

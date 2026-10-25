@@ -449,3 +449,18 @@ footer {
   overflow-wrap: anywhere;
   color: var(--muted);
 }
+.machine-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  font:
+    12px "DM Mono",
+    monospace;
+}
+.machine-card .primary,
+.machine-card .secondary {
+  width: auto;
+}

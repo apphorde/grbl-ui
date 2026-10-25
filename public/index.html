@@ -25,20 +25,15 @@
         <button id="connect" class="primary">Connect USB</button>
       </section>
       <section class="relay panel">
-        <div>
-          <span class="eyebrow">REMOTE SERIAL RELAY</span>
-          <h2>Connect through your server</h2>
-          <p>Paste the same session ID used by the serial bridge. Start the bridge first so it joins this room.</p>
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">REMOTE MACHINES</span>
+            <h2>Your bridge connectors</h2>
+          </div>
+          <button id="logout" class="secondary">Sign out</button>
         </div>
-        <div class="relay-controls">
-          <input id="session-id" aria-label="Relay session ID" spellcheck="false" /><button
-            id="new-session"
-            class="secondary"
-          >
-            New ID</button
-          ><button id="connect-relay" class="primary">Connect relay</button>
-        </div>
-        <code class="relay-command" id="bridge-command"></code>
+        <p>Claim an available machine once, then connect securely with a one-time ticket.</p>
+        <div id="machines" aria-live="polite">Loading machines…</div>
       </section>
       <section class="status panel">
         <div class="status-head">

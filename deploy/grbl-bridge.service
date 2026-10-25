@@ -1,0 +1,30 @@
+[Unit]
+Description=Authenticated GRBL serial bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=grbl-bridge
+Group=grbl-bridge
+SupplementaryGroups=dialout
+WorkingDirectory=/opt/grbl-ui
+EnvironmentFile=/etc/grbl-bridge.env
+Environment=MACHINE_ID_PATH=/var/lib/grbl-bridge/machine-id
+StateDirectory=grbl-bridge
+ExecStart=/usr/bin/node /opt/grbl-ui/serial-bridge.mjs
+Restart=always
+RestartSec=5s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+DevicePolicy=closed
+DeviceAllow=/dev/ttyUSB0 rw
+DeviceAllow=/dev/ttyUSB1 rw
+DeviceAllow=/dev/ttyACM0 rw
+DeviceAllow=/dev/ttyACM1 rw
+
+[Install]
+WantedBy=multi-user.target

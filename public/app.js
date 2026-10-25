@@ -152,58 +152,131 @@ async function connect() {
   }
 }
 
-function newSessionId() {
-  $("#session-id").value = crypto.randomUUID();
-  updateBridgeCommand();
-}
-
-function updateBridgeCommand() {
-  const id = $("#session-id").value.trim();
-  $("#bridge-command").textContent =
-    `RELAY_URL=wss://ws.api.apphor.de/${id} SERIAL_PORT=/dev/ttyUSB0 npm run serial-bridge`;
-}
-
-function connectRelay() {
+async function connectRelay(machineId, button) {
+  if (connected && relaySocket) {
+    await disconnect();
+    button.textContent = "Connect";
+    return;
+  }
   if (connected) {
-    disconnect();
-    return;
+    await disconnect();
   }
-  const sessionId = $("#session-id").value.trim();
-  if (!sessionId || /[/?#\s]/.test(sessionId)) {
-    addLog("Enter a valid relay session ID.", "error");
-    return;
-  }
-  relaySocket = new WebSocket(`wss://ws.api.apphor.de/${encodeURIComponent(sessionId)}`);
-  relaySocket.binaryType = "arraybuffer";
-  relaySocket.addEventListener(
-    "open",
-    () => {
-      setConnected(true);
-      $("#connect-relay").textContent = "Disconnect relay";
-      addLog(`Connected to relay session ${sessionId}.`);
-      write("?");
-      polling = setInterval(() => {
-        write("?");
-      }, 500);
-    },
-    { once: true },
-  );
-  relaySocket.addEventListener("message", (event) => {
-    const bytes = typeof event.data === "string" ? event.data : new TextDecoder().decode(event.data);
-    buffer += bytes;
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? "";
-    lines.filter(Boolean).forEach(parseLine);
-  });
-  relaySocket.addEventListener("close", () => {
-    if (relaySocket) {
-      relaySocket = undefined;
+  button.disabled = true;
+  try {
+    const ticketResponse = await fetch(`/api/machines/${encodeURIComponent(machineId)}/ticket`, { method: "POST" });
+    if (!ticketResponse.ok) {
+      throw new Error("Could not obtain connection ticket");
     }
-    clearInterval(polling);
-    setConnected(false);
-    $("#connect-relay").textContent = "Connect relay";
-  });
-  relaySocket.addEventListener("error", () => addLog("WebSocket relay connection failed.", "error"), { once: true });
+    const { ticket } = await ticketResponse.json();
+    const configuredRelay = document.querySelector('meta[name="relay-ws"]')?.content || "wss://ws.api.apphor.de";
+    const socket = new WebSocket(`${configuredRelay.replace(/\/$/, "")}/${encodeURIComponent(machineId)}`);
+    relaySocket = socket;
+    socket.binaryType = "arraybuffer";
+    let authorized = false;
+    let authorizationTimer;
+    socket.addEventListener(
+      "open",
+      () => {
+        socket.send(JSON.stringify({ type: "authorize", ticket }));
+        authorizationTimer = setTimeout(() => socket.close(), 4000);
+      },
+      { once: true },
+    );
+    socket.addEventListener("message", (event) => {
+      if (typeof event.data === "string") {
+        try {
+          const control = JSON.parse(event.data);
+          if (control.type === "authorized" && control.machineId === machineId) {
+            authorized = true;
+            clearTimeout(authorizationTimer);
+            setConnected(true);
+            button.textContent = "Disconnect";
+            button.disabled = false;
+            addLog("Connected to remote machine.");
+            write("?");
+            polling = setInterval(() => {
+              write("?");
+            }, 500);
+            return;
+          }
+        } catch {
+          /* GRBL frames are plain text, not JSON control messages. */
+        }
+      }
+      if (!authorized) {
+        return;
+      }
+      const bytes = typeof event.data === "string" ? event.data : new TextDecoder().decode(event.data);
+      buffer += bytes;
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+      lines.filter(Boolean).forEach(parseLine);
+    });
+    socket.addEventListener("close", () => {
+      clearTimeout(authorizationTimer);
+      if (relaySocket === socket) {
+        relaySocket = undefined;
+        clearInterval(polling);
+        setConnected(false);
+        button.textContent = "Connect";
+      }
+      button.disabled = false;
+    });
+    socket.addEventListener("error", () => addLog("WebSocket relay connection failed.", "error"), { once: true });
+  } catch (error) {
+    addLog(error.message, "error");
+    button.disabled = false;
+  }
+}
+
+async function loadMachines() {
+  const container = $("#machines");
+  try {
+    const response = await fetch("/api/machines");
+    if (response.status === 401) {
+      location.assign("/oidc/login");
+      return;
+    }
+    if (!response.ok) {
+      throw new Error("Could not load machines");
+    }
+    const machines = await response.json();
+    container.replaceChildren();
+    if (!machines.length) {
+      container.textContent = "No available bridge connectors.";
+      return;
+    }
+    for (const machine of machines) {
+      const card = document.createElement("article");
+      card.className = "machine-card";
+      const label = document.createElement("span");
+      label.textContent = `${machine.uuid} · ${machine.status}`;
+      const button = document.createElement("button");
+      button.className = machine.claimed ? "primary" : "secondary";
+      button.textContent = machine.claimed ? "Connect" : "Claim";
+      button.addEventListener("click", async () => {
+        if (!machine.claimed) {
+          button.disabled = true;
+          const claim = await fetch(`/api/machines/${encodeURIComponent(machine.uuid)}/claim`, { method: "POST" });
+          if (!claim.ok) {
+            addLog("Claim failed; machine may belong to another account.", "error");
+            button.disabled = false;
+            return;
+          }
+          machine.claimed = true;
+          button.textContent = "Connect";
+          button.className = "primary";
+          button.disabled = false;
+        } else {
+          connectRelay(machine.uuid, button);
+        }
+      });
+      card.append(label, button);
+      container.append(card);
+    }
+  } catch (error) {
+    container.textContent = error.message;
+  }
 }
 
 function stopJog() {
@@ -214,9 +287,15 @@ function stopJog() {
 }
 
 $("#connect").addEventListener("click", connect);
-$("#connect-relay").addEventListener("click", connectRelay);
-$("#new-session").addEventListener("click", newSessionId);
-$("#session-id").addEventListener("input", updateBridgeCommand);
+$("#logout").addEventListener("click", async () => {
+  const response = await fetch("/api/logout", { method: "POST" });
+  if (response.ok) {
+    const { logoutUrl } = await response.json();
+    location.assign(logoutUrl);
+  } else {
+    addLog("Sign-out failed. Please retry.", "error");
+  }
+});
 $("#poll").addEventListener("click", () => write("?"));
 $("#unlock").addEventListener("click", () => write("$X"));
 $("#clear-log").addEventListener("click", () => {
@@ -262,4 +341,4 @@ document.addEventListener("visibilitychange", () => {
     addLog("Page hidden. Polling continues; close the tab or disconnect to stop.");
   }
 });
-newSessionId();
+loadMachines();
