@@ -168,7 +168,10 @@ async function connectRelay(machineId, button) {
       throw new Error("Could not obtain connection ticket");
     }
     const { ticket } = await ticketResponse.json();
-    const configuredRelay = document.querySelector('meta[name="relay-ws"]')?.content || "wss://ws.api.apphor.de";
+    const configuredRelay = document.querySelector('meta[name="relay-ws"]')?.content;
+    if (!configuredRelay) {
+      throw new Error("Remote relay is not configured.");
+    }
     const socket = new WebSocket(`${configuredRelay.replace(/\/$/, "")}/${encodeURIComponent(machineId)}`);
     relaySocket = socket;
     socket.binaryType = "arraybuffer";

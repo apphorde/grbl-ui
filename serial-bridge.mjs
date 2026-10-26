@@ -197,7 +197,10 @@ async function main() {
   if (!token) {
     throw new Error("Missing required environment variable BRIDGE_REGISTRATION_TOKEN");
   }
-  const relayAddress = process.env.RELAY_URL?.trim() || "wss://ws.api.apphor.de";
+  const relayAddress = process.env.RELAY_URL?.trim();
+  if (!relayAddress) {
+    throw new Error("Missing required environment variable RELAY_URL");
+  }
   const serialPath = process.env.SERIAL_PORT?.trim();
   if (!serialPath) {
     throw new Error("Missing required environment variable SERIAL_PORT");
@@ -206,9 +209,21 @@ async function main() {
   if (!Number.isInteger(baudRate) || baudRate <= 0) {
     throw new Error("BAUD_RATE must be a positive integer");
   }
-  const relayUrl = new URL(relayAddress);
-  if (!["ws:", "wss:"].includes(relayUrl.protocol)) {
-    throw new Error("RELAY_URL must use ws:// or wss://");
+  let relayUrl;
+  try {
+    relayUrl = new URL(relayAddress);
+  } catch {
+    throw new Error("RELAY_URL must be a WebSocket origin");
+  }
+  if (
+    !["ws:", "wss:"].includes(relayUrl.protocol) ||
+    relayUrl.username ||
+    relayUrl.password ||
+    relayUrl.pathname !== "/" ||
+    relayUrl.search ||
+    relayUrl.hash
+  ) {
+    throw new Error("RELAY_URL must be a WebSocket origin using ws:// or wss://");
   }
   relayUrl.pathname = "/bridge/register";
   relayUrl.search = "";

@@ -162,6 +162,7 @@ test.beforeAll(async () => {
       OIDC_CLIENT_ID: clientId,
       OIDC_CLIENT_SECRET: clientSecret,
       RELAY_API_URL: "http://127.0.0.1:18431",
+      RELAY_URL: "ws://127.0.0.1:18431",
       RELAY_API_TOKEN: "relay-e2e-token",
     },
     stdio: "ignore",
@@ -275,13 +276,16 @@ test("requires OIDC, binds callback to its browser, lists and claims connectors,
     Object.defineProperty(window, "WebSocket", { value: MockWebSocket });
     window.__mockRelayMessage = (data) => window.__relaySocket.dispatchEvent(new MessageEvent("message", { data }));
   });
-  await page.goto(baseURL);
+  const appResponse = await page.goto(baseURL);
+  expect(await page.locator('meta[name="relay-ws"]').getAttribute("content")).toBe("ws://127.0.0.1:18431");
+  expect(appResponse?.headers()["content-security-policy"]).toContain("connect-src 'self' ws://127.0.0.1:18431");
   await expect(page.locator("#machines")).toContainText(machineId);
   await page.getByRole("button", { name: "Claim" }).click();
   await expect(page.getByRole("button", { name: "Connect" })).toBeVisible();
 
   const machineButton = page.locator("#machines button");
   await machineButton.click();
+  await expect.poll(() => page.evaluate(() => window.__relaySocket?.url)).toBe(`ws://127.0.0.1:18431/${machineId}`);
   await expect.poll(() => page.evaluate(() => window.__relaySocket?.sent?.[0])).toContain('"type":"authorize"');
   await expect(page.locator("#connection-label")).toHaveText("Disconnected");
   await page.evaluate(

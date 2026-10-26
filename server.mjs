@@ -15,6 +15,28 @@ const transactionCookieName = "grbl_oidc_state";
 const issuer = process.env.OIDC_ISSUER;
 const clientId = process.env.OIDC_CLIENT_ID;
 const clientSecret = process.env.OIDC_CLIENT_SECRET;
+function configuredUrl(value, protocols, requireOrigin = false) {
+  if (!value?.trim()) {
+    return undefined;
+  }
+  try {
+    const url = new URL(value.trim());
+    if (
+      !protocols.includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      (requireOrigin && url.pathname !== "/")
+    ) {
+      return undefined;
+    }
+    return url;
+  } catch {
+    return undefined;
+  }
+}
+
 let appUrl;
 const isLoopback = (hostname) => hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
 try {
@@ -33,7 +55,9 @@ try {
 } catch {
   appUrl = undefined;
 }
-const relayApi = (process.env.RELAY_API_URL ?? "https://ws.api.apphor.de").replace(/\/$/, "");
+const relayApiUrl = configuredUrl(process.env.RELAY_API_URL, ["http:", "https:"]);
+const relayApi = relayApiUrl?.href.replace(/\/$/, "");
+const relayWsOrigin = configuredUrl(process.env.RELAY_URL, ["ws:", "wss:"], true)?.origin;
 let oidcConfig;
 let configError;
 if (issuer && clientId && clientSecret && appUrl) {
@@ -78,7 +102,7 @@ function sessionFor(request) {
 }
 
 async function relay(path, method, payload) {
-  if (!process.env.RELAY_API_TOKEN) {
+  if (!relayApi || !process.env.RELAY_API_TOKEN) {
     throw new Error("Relay unavailable");
   }
   const response = await fetch(`${relayApi}${path}`, {
@@ -111,14 +135,14 @@ const server = createServer(async (request, response) => {
   response.setHeader("Permissions-Policy", "serial=(self)");
   response.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' wss://ws.api.apphor.de; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'",
+    `default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; connect-src 'self'${relayWsOrigin ? ` ${relayWsOrigin}` : ""}; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'`,
   );
   if (appUrl?.startsWith("https://")) {
     response.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
   const url = new URL(request.url, appUrl ?? "http://localhost");
   if (url.pathname === "/health") {
-    const ready = !configError && Boolean(process.env.RELAY_API_TOKEN);
+    const ready = !configError && Boolean(relayApi && relayWsOrigin && process.env.RELAY_API_TOKEN);
     json(response, ready ? 200 : 503, { ready });
     return;
   }
@@ -292,7 +316,15 @@ const server = createServer(async (request, response) => {
     return;
   }
   try {
-    const body = await readFile(path);
+    let body;
+    if (path === resolve(publicRoot, "index.html")) {
+      const html = await readFile(path, "utf8");
+      body = Buffer.from(
+        html.replace('name="relay-ws" content=""', `name="relay-ws" content="${relayWsOrigin ?? ""}"`),
+      );
+    } else {
+      body = await readFile(path);
+    }
     response.writeHead(200, {
       "Content-Type":
         {
